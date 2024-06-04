@@ -1,183 +1,65 @@
-﻿using Microsoft.AspNetCore.Http;
-
+﻿using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.DataModel;
+using Amazon.DynamoDBv2.DocumentModel;
+using Amazon.DynamoDBv2.Model;
 using Microsoft.AspNetCore.Mvc;
-
-using System.Data;
-
-using System.Data.SqlClient;
-
-using System.Security.AccessControl;
-
-
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace WebApplication1.Controllers
-
 {
-
     [Route("api/[controller]")]
-
     [ApiController]
-
     public class TodoAppController : ControllerBase
-
     {
-
-        private IConfiguration _configuration;
+        private readonly IConfiguration _configuration;
+        private readonly AmazonDynamoDBClient _dynamoDbClient;
+        private readonly DynamoDBContext _context;
 
         public TodoAppController(IConfiguration configuration)
-
         {
-
             _configuration = configuration;
-
-
-
+            var awsOptions = configuration.GetAWSOptions();
+            _dynamoDbClient = new AmazonDynamoDBClient(awsOptions);
+            _context = new DynamoDBContext(_dynamoDbClient);
         }
-
-
 
         [HttpGet]
-
         [Route("GetNotes")]
-
-        public JsonResult GetNotes()
-
+        public async Task<JsonResult> GetNotes()
         {
-
-            string query = "select * from dbo.Notes";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using (SqlConnection myCon = new SqlConnection(sqlDatasource))
-
+            var request = new ScanRequest
             {
-
-                myCon.Open();
-
-                using (SqlCommand myCommand = new SqlCommand(query, myCon))
-
-                {
-
-                    myReader = myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
-
-
-            return new JsonResult(table);
-
+                TableName = "Notes"
+            };
+            var response = await _dynamoDbClient.ScanAsync(request);
+            var items = response.Items;
+            return new JsonResult(items);
         }
-
-
 
         [HttpPost]
-
         [Route("AddNotes")]
-
-        public JsonResult AddNotes([FromForm] string newNotes)
-
+        public async Task<JsonResult> AddNotes([FromForm] string newNotes)
         {
-
-            string query = "insert into dbo.Notes values(@newNotes)";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using (SqlConnection myCon = new SqlConnection(sqlDatasource))
-
+            var table = Table.LoadTable(_dynamoDbClient, "Notes");
+            var item = new Document
             {
-
-                myCon.Open();
-
-                using (SqlCommand myCommand = new SqlCommand(query, myCon))
-
-                {
-
-                    myCommand.Parameters.AddWithValue("@newNotes", newNotes);
-
-                    myReader = myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
-
-
+                ["Id"] = Guid.NewGuid().ToString(),
+                ["Note"] = newNotes
+            };
+            await table.PutItemAsync(item);
             return new JsonResult("Added Successfully");
-
         }
-
-
 
         [HttpDelete]
-
         [Route("DeleteNotes")]
-
-        public JsonResult DeleteNotes(int id)
-
+        public async Task<JsonResult> DeleteNotes([FromForm] string id)
         {
-
-            string query = "delete from dbo.Notes where id=@id";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using (SqlConnection myCon = new SqlConnection(sqlDatasource))
-
-            {
-
-                myCon.Open();
-
-                using (SqlCommand myCommand = new SqlCommand(query, myCon))
-
-                {
-
-                    myCommand.Parameters.AddWithValue("@id", id);
-
-                    myReader = myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
-
-
+            var table = Table.LoadTable(_dynamoDbClient, "Notes");
+            await table.DeleteItemAsync(id);
             return new JsonResult("Deleted Successfully");
-
         }
-
-
-
     }
-
 }
